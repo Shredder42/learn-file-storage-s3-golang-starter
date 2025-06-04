@@ -1,10 +1,10 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -48,12 +48,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	data, err := io.ReadAll(file)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Error reading data", err)
-		return
-	}
-
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error getting video", err)
@@ -65,10 +59,24 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	base64Image := base64.StdEncoding.EncodeToString(data)
-	imageDataURL := fmt.Sprintf("data:%s;base64,%s", mediaType, base64Image)
+	assetPath := getAssetPath(videoID, mediaType)
+	assetDiskPath := cfg.getAssetDiskPath(assetPath)
 
-	video.ThumbnailURL = &imageDataURL
+	newFile, err := os.Create(assetDiskPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error creating file on server", err)
+		return
+	}
+	defer newFile.Close()
+
+	_, err = io.Copy(newFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error copying data", err)
+		return
+	}
+
+	assetURL := cfg.getAssetURL(assetPath)
+	video.ThumbnailURL = &assetURL
 
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
